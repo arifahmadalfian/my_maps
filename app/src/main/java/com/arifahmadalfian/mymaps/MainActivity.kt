@@ -10,6 +10,9 @@ import android.widget.Button
 import android.widget.Toast
 import com.mapbox.android.core.permissions.PermissionsListener
 import com.mapbox.android.core.permissions.PermissionsManager
+import com.mapbox.api.directions.v5.models.DirectionsResponse
+import com.mapbox.api.directions.v5.models.DirectionsRoute
+import com.mapbox.geojson.Point
 import com.mapbox.mapboxsdk.camera.CameraUpdateFactory
 import com.mapbox.mapboxsdk.geometry.LatLng
 import com.mapbox.mapboxsdk.location.LocationComponent
@@ -22,6 +25,10 @@ import com.mapbox.mapboxsdk.maps.MapboxMap
 import com.mapbox.mapboxsdk.maps.Style
 import com.mapbox.mapboxsdk.plugins.annotation.SymbolManager
 import com.mapbox.mapboxsdk.plugins.annotation.SymbolOptions
+import com.mapbox.services.android.navigation.ui.v5.route.NavigationMapRoute
+import com.mapbox.services.android.navigation.v5.navigation.NavigationRoute
+import retrofit2.Call
+import retrofit2.Response
 
 class MainActivity : AppCompatActivity() {
 
@@ -38,6 +45,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var locationComponent: LocationComponent
     private lateinit var myLocation: LatLng
     private lateinit var permissionsManager: PermissionsManager
+
+    private lateinit var navigationMapRoute: NavigationMapRoute
+    private var currentRoute: DirectionsRoute? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,10 +68,69 @@ class MainActivity : AppCompatActivity() {
                     BitmapFactory.decodeResource(resources, R.drawable.mapbox_marker_icon_default)
                 )
 
+                navigationMapRoute = NavigationMapRoute(
+                    null,
+                    mapView,
+                    mapboxMap,
+                    R.style.NavigationMapRoute
+                )
                 showDicodingSpace()
                 showMyLocation(style)
+                addMarkerOnClick()
             }
         }
+    }
+
+    private fun addMarkerOnClick() {
+        mapboxMap.addOnMapClickListener { point ->
+            val destination = Point.fromLngLat(point.longitude, point.latitude)
+            val origin = Point.fromLngLat(myLocation.longitude, myLocation.latitude)
+            requestRoute(origin, destination)
+
+            true
+        }
+    }
+
+    private fun requestRoute(origin: Point, destination: Point) {
+        navigationMapRoute.updateRouteArrowVisibilityTo(false)
+        NavigationRoute.builder(this)
+            .accessToken(getString(R.string.mapbox_access_token))
+            .origin(origin)
+            .destination(destination)
+            .build()
+            .getRoute(object: retrofit2.Callback<DirectionsResponse>{
+                override fun onResponse(
+                    call: Call<DirectionsResponse>,
+                    response: Response<DirectionsResponse>
+                ) {
+                    if (response.body() == null) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "No routes found, make sure you set the right user and access token.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return
+                    } else if (response.body()?.routes()?.size == 0) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "No routes found.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return
+                    }
+                    currentRoute = response.body()?.routes()?.get(0)
+                    navigationMapRoute.addRoute(currentRoute)
+                }
+
+                override fun onFailure(call: Call<DirectionsResponse>, t: Throwable) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Error :$t",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+
+            })
     }
 
     @SuppressLint("MissingPermission")
